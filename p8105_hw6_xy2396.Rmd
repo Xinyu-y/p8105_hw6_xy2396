@@ -195,7 +195,7 @@ log_beta %>%
   knitr::kable()
 ```
 
-The 95% confidence interval for **log(beta0*beta1)** is `r log_beta %>% select(value) %>% slice(1) %>% pull %>% round(3)` to `r log_beta %>% select(value) %>% slice(3) %>% pull %>% round(3)`
+The 95% confidence interval for log(beta0*beta1) is `r log_beta %>% select(value) %>% slice(1) %>% pull %>% round(3)` to `r log_beta %>% select(value) %>% slice(3) %>% pull %>% round(3)`
 
 ```{r warning=FALSE}
 #r-squared and 95% CI
@@ -212,4 +212,4 @@ r_squared %>%
   knitr::kable()
 ```
 
-The 95% confidence interval for **r-squared** is `r r_squared %>% select(value) %>% slice(1) %>% pull %>% round(3)` to `r r_squared %>% select(value) %>% slice(3) %>% pull %>% round(3)`
+The 95% confidence interval for r-squared is `r r_squared %>% select(value) %>% slice(1) %>% pull %>% round(3)` to `r r_squared %>% select(value) %>% slice(3) %>% pull %>% round(3)`
