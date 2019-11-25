@@ -14,7 +14,7 @@ library(mgcv)
 
 ## Problem 1
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 birthweight <-
   read_csv("./data/birthweight.csv") %>% 
   janitor::clean_names() %>% 
@@ -44,9 +44,15 @@ bivariate = function(x) {
 
 bivariate_result <-
   birthweight %>% 
+  select(-bwt) %>% 
   map_dfr(~bivariate(.), .id = "source")
+bivariate_result %>% knitr::kable()
+```
 
-#fit model1 with selected vairables
+After cleaning the data a quick glance on the bivariate relationship between outcome birthweight and each variable was taken. Variables that were not significant at alpha = 0.01 level would be excluded from candicdate variables for model 1; variables that do not hold a temporal relationship with the outcome (e.g. baby body length, head circumstance) were not included; for variables that are potentially have a high co-linearity, one of them would be selected (e.g. selected BMI but excluded mother's weight and height; selected mother's race and excluded father's). The final model 1 are shown below, with variables baby's sex, gestational age, mother's age, mother's race, mother's pre-delivery BMI, and mother's weight gain.
+
+```{r}
+#fit model 1 with selected vairables
 model1 <- lm(bwt ~ babysex + gaweeks + momage + mrace + ppbmi + wtgain, data = birthweight) 
 model1 %>% 
   broom::tidy() %>% 
@@ -57,10 +63,7 @@ model1 %>%
     ) %>% 
   knitr::kable()
 ```
-
-Describe modeling process...
-
-
+   
 Plot residuals against fitted value
 ```{r}
 birthweight %>% 
@@ -72,7 +75,7 @@ modelr::add_predictions(model1) %>%
 ```
 
 The residual vs. predicted value is relatively shapeless without clear patterns in the data, and it is generally symmetrically distributed around the 0 line.
-
+   
 ```{r}
 #model2: length at birth and gestational age as predictors (main effects only)
 model2 <- lm(bwt ~ blength + gaweeks, data = birthweight) 
@@ -98,7 +101,7 @@ model3 %>%
     ) %>% 
   knitr::kable()
 ```
-
+   
 Cross validation to compare models:
 ```{r}
 cv_df = 
@@ -158,7 +161,7 @@ weather_df %>%
 ```
 
 Bootstrap samples:
-```{r}
+```{r warning=FALSE}
 boot_sample = function(df) {
   sample_frac(df, replace = TRUE)
 }
@@ -177,7 +180,8 @@ bootstrap_results =
     overall = map(models, broom::glance)) 
 
 #log(beta0*beta1) and its 95% CI
-bootstrap_results %>% 
+log_beta <-
+  bootstrap_results %>% 
   select(-strap_sample, -models, -overall) %>% 
   unnest(cols = c(results)) %>% 
   select(strap_number, term, estimate) %>% 
@@ -186,22 +190,26 @@ bootstrap_results %>%
   mutate(log_beta = log((beta0*beta1))) %>% 
   summarise(log_95 = list(enframe(quantile(log_beta, probs = c(0.025, 0.5, 0.975))))) %>% 
   unnest() %>% 
-  rename(percentile = name) %>% 
+  rename(percentile = name)
+log_beta %>% 
   knitr::kable()
 ```
 
-The 95% confidence interval for log(beta0*beta1) is 
+The 95% confidence interval for **log(beta0*beta1)** is `r log_beta %>% select(value) %>% slice(1) %>% pull %>% round(3)` to `r log_beta %>% select(value) %>% slice(3) %>% pull %>% round(3)`
 
-```{r}
+```{r warning=FALSE}
 #r-squared and 95% CI
-bootstrap_results %>% 
+r_squared <-
+  bootstrap_results %>% 
   select(-strap_sample, -models, -results) %>% 
   unnest(cols = c(overall)) %>% 
   janitor::clean_names() %>% 
   select(r_squared) %>% 
   summarise(r_95 = list(enframe(quantile(r_squared, probs = c(0.025, 0.5, 0.975))))) %>% 
   unnest() %>% 
-  rename(percentile = name) %>% 
+  rename(percentile = name)
+r_squared %>% 
   knitr::kable()
 ```
 
+The 95% confidence interval for **r-squared** is `r r_squared %>% select(value) %>% slice(1) %>% pull %>% round(3)` to `r r_squared %>% select(value) %>% slice(3) %>% pull %>% round(3)`
