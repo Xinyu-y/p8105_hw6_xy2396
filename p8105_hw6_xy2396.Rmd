@@ -1,0 +1,207 @@
+---
+title: "Homework 6"
+author: "Xinyu Yang"
+date: "11/22/2019"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(modelr)
+library(mgcv)
+```
+
+## Problem 1
+
+```{r}
+birthweight <-
+  read_csv("./data/birthweight.csv") %>% 
+  janitor::clean_names() %>% 
+  filter(frace != 9) %>% 
+  select(-pnumlbw,-pnumsga) %>% 
+  mutate(
+    babysex = as.factor(babysex),
+    frace = as.factor(frace),
+    mrace = as.factor(mrace),
+    malform = as.factor(malform)
+  )
+
+#check missing data
+apply(is.na(birthweight),2,sum)
+```
+
+After read in the dataset, no missing value was identified; variables babysex, frace, mrace, malform were converted into factor; vairalbes pnumlbw, pnumgsa contained only value of 0, thus were excluded; frace level 9 (unknown) was also excluded from the analysis.
+
+```{r}
+#function for bivariate regression
+bivariate = function(x) {
+  lm(bwt ~ x, data = birthweight) %>% broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  filter(term != "(Intercept)") %>% 
+  mutate(p.value = round(p.value, 4))
+}
+
+bivariate_result <-
+  birthweight %>% 
+  map_dfr(~bivariate(.), .id = "source")
+
+#fit model1 with selected vairables
+model1 <- lm(bwt ~ babysex + gaweeks + momage + mrace + ppbmi + wtgain, data = birthweight) 
+model1 %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  mutate(
+    p.value = round(p.value, 3),
+    estimate = round(estimate, 2),
+    ) %>% 
+  knitr::kable()
+```
+
+Describe modeling process...
+
+
+Plot residuals against fitted value
+```{r}
+birthweight %>% 
+modelr::add_residuals(model1) %>% 
+modelr::add_predictions(model1) %>% 
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.3)
+
+```
+
+The residual vs. predicted value is relatively shapeless without clear patterns in the data, and it is generally symmetrically distributed around the 0 line.
+
+```{r}
+#model2: length at birth and gestational age as predictors (main effects only)
+model2 <- lm(bwt ~ blength + gaweeks, data = birthweight) 
+
+model2 %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  mutate(
+    p.value = round(p.value, 3),
+    estimate = round(estimate, 2),
+    ) %>% 
+  knitr::kable()
+
+#model3: head circumference, length, sex, and all interactions (including the three-way interaction)
+model3 <- lm(bwt ~ (bhead + blength + babysex)^3, data = birthweight)
+
+model3 %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  mutate(
+    p.value = round(p.value, 3),
+    estimate = round(estimate, 2),
+    ) %>% 
+  knitr::kable()
+```
+
+Cross validation to compare models:
+```{r}
+cv_df = 
+  crossv_mc(birthweight, 100)
+
+cv_df =
+  cv_df %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble))
+
+cv_df = 
+  cv_df %>% 
+  mutate(
+    mod_1 = map(train, ~lm(bwt ~ babysex + gaweeks + momage + mrace + ppbmi + wtgain, data = .x)),
+    mod_2 = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+    mod_3 = map(train, ~lm(bwt ~ (bhead + blength + babysex)^3, data = .x))
+    ) %>% 
+  mutate(
+    rmse_1 = map2_dbl(mod_1, test, ~rmse(model = .x, data = .y)),
+    rmse_2 = map2_dbl(mod_2, test, ~rmse(model = .x, data = .y)),
+    rmse_3 = map2_dbl(mod_3, test, ~rmse(model = .x, data = .y)))
+
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + geom_violin() +
+  theme_minimal()
+```
+
+From the violin plot we can see that the prediction error is the lowest with model 3 (using head circumference, length, sex, and all interactions).
+
+## Problem 2
+```{r message=FALSE}
+#read in dataset
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+
+temperature <-
+weather_df %>% 
+  select(tmax, tmin)
+
+```
+
+Bootstrap samples:
+```{r}
+boot_sample = function(df) {
+  sample_frac(df, replace = TRUE)
+}
+
+boot_straps = 
+  data_frame(
+    strap_number = 1:5000,
+    strap_sample = rerun(5000, boot_sample(temperature))
+  )
+
+bootstrap_results = 
+  boot_straps %>% 
+  mutate(
+    models = map(strap_sample, ~lm(tmax ~ tmin, data = .x) ),
+    results = map(models, broom::tidy),
+    overall = map(models, broom::glance)) 
+
+#log(beta0*beta1) and its 95% CI
+bootstrap_results %>% 
+  select(-strap_sample, -models, -overall) %>% 
+  unnest(cols = c(results)) %>% 
+  select(strap_number, term, estimate) %>% 
+  pivot_wider(names_from = term, values_from = estimate) %>% 
+  rename(beta0 = "(Intercept)", beta1 = tmin) %>% 
+  mutate(log_beta = log((beta0*beta1))) %>% 
+  summarise(log_95 = list(enframe(quantile(log_beta, probs = c(0.025, 0.5, 0.975))))) %>% 
+  unnest() %>% 
+  rename(percentile = name) %>% 
+  knitr::kable()
+```
+
+The 95% confidence interval for log(beta0*beta1) is 
+
+```{r}
+#r-squared and 95% CI
+bootstrap_results %>% 
+  select(-strap_sample, -models, -results) %>% 
+  unnest(cols = c(overall)) %>% 
+  janitor::clean_names() %>% 
+  select(r_squared) %>% 
+  summarise(r_95 = list(enframe(quantile(r_squared, probs = c(0.025, 0.5, 0.975))))) %>% 
+  unnest() %>% 
+  rename(percentile = name) %>% 
+  knitr::kable()
+```
+
